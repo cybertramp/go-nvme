@@ -2,24 +2,23 @@ package main
 
 import (
 	nvme "./nvme"
-	drivedb "./drivedb"
+	//drivedb "./drivedb"
 	"fmt"
 	"os"
 )
 
 func main() {
-	fmt.Println("Hello")
 	d := nvme.NewNVMeDevice("/dev/nvme0")
+	err := d.Open()
 
-	defer d.Close()
-
-	db, err := drivedb.OpenDriveDb("drivedb.yaml")
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 
-	if err := d.PrintSMART(&db, os.Stdout); err != nil {
+	defer d.Close()
+
+	if err := d.PrintSMART(os.Stdout); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}

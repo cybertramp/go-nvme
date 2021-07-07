@@ -26,7 +26,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"../drivedb"
+	//"../drivedb"
 	"../ioctl"
 	"../utils"
 )
@@ -171,26 +171,32 @@ type nvmeIdentNamespace struct {
 } // 4096 bytes
 
 type nvmeSMARTLog struct {
-	CritWarning      uint8
-	Temperature      [2]uint8
-	AvailSpare       uint8
-	SpareThresh      uint8
-	PercentUsed      uint8
-	Rsvd6            [26]byte
-	DataUnitsRead    [16]byte
-	DataUnitsWritten [16]byte
-	HostReads        [16]byte
-	HostWrites       [16]byte
-	CtrlBusyTime     [16]byte
-	PowerCycles      [16]byte
-	PowerOnHours     [16]byte
-	UnsafeShutdowns  [16]byte
-	MediaErrors      [16]byte
-	NumErrLogEntries [16]byte
-	WarningTempTime  uint32
-	CritCompTime     uint32
-	TempSensor       [8]uint16
-	Rsvd216          [296]byte
+	Critical_warning         uint8
+	Temperature              [2]uint8
+	Avail_spare              uint8
+	Spare_thresh             uint8
+	Percent_used             uint8
+	Endu_grp_crit_warn_sumry uint8
+	Rsvd7                    [25]byte
+	Data_units_read          [16]byte
+	Data_units_written       [16]byte
+	Host_reads               [16]byte
+	Host_writes              [16]byte
+	Ctrl_busy_time           [16]byte
+	Power_cycles             [16]byte
+	Power_on_hours           [16]byte
+	Unsafe_shutdowns         [16]byte
+	Media_errors             [16]byte
+	Num_err_log_entries      [16]byte
+	Warning_temp_time        uint32
+	Critical_comp_time       uint32
+	Temp_sensor              [8]uint16
+	Thm_temp1_trans_count    uint32
+	Thm_temp2_trans_count    uint32
+	Thm_temp1_total_time     uint32
+	Thm_temp2_total_time     uint32
+	Rsvd232                  [280]byte
+
 } // 512 bytes
 
 type NVMeDevice struct {
@@ -212,103 +218,62 @@ func (d *NVMeDevice) Close() error {
 }
 
 // WIP - need to split out functionality further.
-func (d *NVMeDevice) PrintSMART(db *drivedb.DriveDb, w io.Writer) error {
-	buf := make([]byte, 4096)
-
-	cmd := nvmePassthruCommand{
-		opcode:   NVME_ADMIN_IDENTIFY,
-		nsid:     0, // Namespace 0, since we are identifying the controller
-		addr:     uint64(uintptr(unsafe.Pointer(&buf[0]))),
-		data_len: uint32(len(buf)),
-		cdw10:    1, // Identify controller
-	}
-
-	if err := ioctl.Ioctl(uintptr(d.fd), NVME_IOCTL_ADMIN_CMD, uintptr(unsafe.Pointer(&cmd))); err != nil {
-		return err
-	}
-
-	fmt.Fprintf(w, "NVMe call: opcode=%#02x, size=%#04x, nsid=%#08x, cdw10=%#08x\n",
-		cmd.opcode, cmd.data_len, cmd.nsid, cmd.cdw10)
-
-	var controller nvmeIdentController
-
-	binary.Read(bytes.NewBuffer(buf[:]), utils.NativeEndian, &controller)
-
-	fmt.Fprintln(w)
-	fmt.Fprintf(w, "Vendor ID: %#04x\n", controller.VendorID)
-	fmt.Fprintf(w, "Model number: %s\n", controller.ModelNumber)
-	fmt.Fprintf(w, "Serial number: %s\n", controller.SerialNumber)
-	fmt.Fprintf(w, "Firmware version: %s\n", controller.Firmware)
-	fmt.Fprintf(w, "IEEE OUI identifier: 0x%02x%02x%02x\n",
-		controller.IEEE[2], controller.IEEE[1], controller.IEEE[0])
-	fmt.Fprintf(w, "Max. data transfer size: %d pages\n", 1<<controller.Mdts)
-
-	for _, ps := range controller.Psd {
-		if ps.MaxPower > 0 {
-			fmt.Fprintf(w, "%+v\n", ps)
-		}
-	}
-
-	buf2 := make([]byte, 4096)
-
-	cmd = nvmePassthruCommand{
-		opcode:   NVME_ADMIN_IDENTIFY,
-		nsid:     1, // Namespace 1
-		addr:     uint64(uintptr(unsafe.Pointer(&buf2[0]))),
-		data_len: uint32(len(buf2)),
-		cdw10:    0,
-	}
-
-	if err := ioctl.Ioctl(uintptr(d.fd), NVME_IOCTL_ADMIN_CMD, uintptr(unsafe.Pointer(&cmd))); err != nil {
-		return err
-	}
-
-	fmt.Fprintf(w, "NVMe call: opcode=%#02x, size=%#04x, nsid=%#08x, cdw10=%#08x\n",
-		cmd.opcode, cmd.data_len, cmd.nsid, cmd.cdw10)
-
-	var ns nvmeIdentNamespace
-
-	binary.Read(bytes.NewBuffer(buf2[:]), utils.NativeEndian, &ns)
-
-	fmt.Fprintf(w, "Namespace 1 size: %d sectors\n", ns.Nsze)
-	fmt.Fprintf(w, "Namespace 1 utilisation: %d sectors\n", ns.Nuse)
-
-	buf3 := make([]byte, 512)
-
+// func (d *NVMeDevice) PrintSMART(db *drivedb.DriveDb, w io.Writer) error {
+func (d *NVMeDevice) PrintSMART(w io.Writer) error {
+	
+	buf := make([]byte, 512)
+	
 	// Read SMART log
-	if err := d.readLogPage(0x02, &buf3); err != nil {
+	if err := d.readLogPage(0x02, &buf); err != nil {
 		return err
 	}
 
 	var sl nvmeSMARTLog
+	//fmt.Fprintf(w, "size : %d, %d\n", binary.Size(sl), binary.Size(buf))
+	binary.Read(bytes.NewBuffer(buf[:]), utils.NativeEndian, &sl)
 
-	binary.Read(bytes.NewBuffer(buf3[:]), utils.NativeEndian, &sl)
+	//TODO: Implement bytes to "KMGTP" function
+	unitsRead := le128ToBigInt(sl.Data_units_read)
+	unitsWritten := le128ToBigInt(sl.Data_units_written)
+	hostReads := le128ToBigInt(sl.Host_reads)
+	hostWrites := le128ToBigInt(sl.Host_writes)
+	ctrlBusyTime := le128ToBigInt(sl.Ctrl_busy_time)
+	powerCycles := le128ToBigInt(sl.Power_cycles)
+	powerOnHours := le128ToBigInt(sl.Power_on_hours)
+	unsafeShutdowns := le128ToBigInt(sl.Unsafe_shutdowns)
+	mediaErrors := le128ToBigInt(sl.Media_errors)
+	numErrLogEntries := le128ToBigInt(sl.Num_err_log_entries)
 
-	// TODO: Implement bytes to "KMGTP" function
-	unitsRead := le128ToBigInt(sl.DataUnitsRead)
-	unitsWritten := le128ToBigInt(sl.DataUnitsWritten)
 	unit := big.NewInt(512 * 1000)
 
-	fmt.Fprintln(w, "\nSMART data follows:")
-	fmt.Fprintf(w, "Critical warning: %#02x\n", sl.CritWarning)
-	fmt.Fprintf(w, "Temperature: %d Celsius\n",
+	fmt.Fprintln(w, "Smart Log for NVME device")
+	fmt.Fprintf(w, "critical warning: %#02x\n", sl.Critical_warning)
+	fmt.Fprintf(w, "temperature: %d 'C\n",
 		((uint16(sl.Temperature[1])<<8)|uint16(sl.Temperature[0]))-273) // Kelvin to degrees Celsius
-	fmt.Fprintf(w, "Avail. spare: %d%%\n", sl.AvailSpare)
-	fmt.Fprintf(w, "Avail. spare threshold: %d%%\n", sl.SpareThresh)
-	fmt.Fprintf(w, "Percentage used: %d%%\n", sl.PercentUsed)
-	fmt.Fprintf(w, "Data units read: %d [%s]\n",
+	fmt.Fprintf(w, "avail. spare: %d%%\n", sl.Avail_spare)
+	fmt.Fprintf(w, "avail. spare threshold: %d%%\n", sl.Spare_thresh)
+	fmt.Fprintf(w, "percentage used: %d%%\n", sl.Percent_used)
+	fmt.Fprintf(w, "data units read: %d [%s]\n",
 		unitsRead, utils.FormatBigBytes(new(big.Int).Mul(unitsRead, unit)))
-	fmt.Fprintf(w, "Data units written: %d [%s]\n",
+	fmt.Fprintf(w, "data units written: %d [%s]\n",
 		unitsWritten, utils.FormatBigBytes(new(big.Int).Mul(unitsWritten, unit)))
-	fmt.Fprintf(w, "Host read commands: %d\n", le128ToBigInt(sl.HostReads))
-	fmt.Fprintf(w, "Host write commands: %d\n", le128ToBigInt(sl.HostWrites))
-	fmt.Fprintf(w, "Controller busy time: %d\n", le128ToBigInt(sl.CtrlBusyTime))
-	fmt.Fprintf(w, "Power cycles: %d\n", le128ToBigInt(sl.PowerCycles))
-	fmt.Fprintf(w, "Power on hours: %d\n", le128ToBigInt(sl.PowerOnHours))
-	fmt.Fprintf(w, "Unsafe shutdowns: %d\n", le128ToBigInt(sl.UnsafeShutdowns))
-	fmt.Fprintf(w, "Media & data integrity errors: %d\n", le128ToBigInt(sl.MediaErrors))
-	fmt.Fprintf(w, "Error information log entries: %d\n", le128ToBigInt(sl.NumErrLogEntries))
-
+	fmt.Fprintf(w, "host read commands: %d\n", hostReads)
+	fmt.Fprintf(w, "host write commands: %d\n", hostWrites)
+	fmt.Fprintf(w, "controller busy time: %d\n", ctrlBusyTime)
+	fmt.Fprintf(w, "power cycles: %d\n", powerCycles)
+	fmt.Fprintf(w, "power on hours: %d\n", powerOnHours)
+	fmt.Fprintf(w, "unsafe shutdowns: %d\n", unsafeShutdowns)
+	fmt.Fprintf(w, "media_error: %d\n", mediaErrors)
+	fmt.Fprintf(w, "num_err_log_entries: %d\n", numErrLogEntries)
+	fmt.Fprintf(w, "Warning Temperature Time: %d\n", sl.Warning_temp_time)
+	fmt.Fprintf(w, "Critical Composite Temperature Time: %d\n", sl.Critical_comp_time)
+	fmt.Fprintf(w, "Temperature Sensor 1: %d 'C\n", uint16(sl.Temp_sensor[0]-uint16(273)))
+	fmt.Fprintf(w, "Temperature Sensor 2: %d 'C\n", uint16(sl.Temp_sensor[1]-uint16(273)))
+	fmt.Fprintf(w, "Thermal Management T1 Trans Count: %d\n", uint32(sl.Thm_temp1_trans_count))
+	fmt.Fprintf(w, "Thermal Management T2 Trans Count: %d\n", uint32(sl.Thm_temp2_trans_count))
+	fmt.Fprintf(w, "Thermal Management T1 Total Time: %d\n", uint32(sl.Thm_temp1_total_time))
+	fmt.Fprintf(w, "Thermal Management T2 Total Time: %d\n", uint32(sl.Thm_temp2_total_time))
+	
 	return nil
 }
 
@@ -340,3 +305,64 @@ func le128ToBigInt(buf [16]byte) *big.Int {
 
 	return new(big.Int).SetBytes(rev)
 }
+
+
+// buf := make([]byte, 4096)
+
+	// cmd := nvmePassthruCommand{
+	// 	opcode:   NVME_ADMIN_IDENTIFY,
+	// 	nsid:     0, // Namespace 0, since we are identifying the controller
+	// 	addr:     uint64(uintptr(unsafe.Pointer(&buf[0]))),
+	// 	data_len: uint32(len(buf)),
+	// 	cdw10:    1, // Identify controller
+	// }
+
+	// if err := ioctl.Ioctl(uintptr(d.fd), NVME_IOCTL_ADMIN_CMD, uintptr(unsafe.Pointer(&cmd))); err != nil {
+	// 	return err
+	// }
+
+	// fmt.Fprintf(w, "NVMe call: opcode=%#02x, size=%#04x, nsid=%#08x, cdw10=%#08x\n",
+	// 	cmd.opcode, cmd.data_len, cmd.nsid, cmd.cdw10)
+
+	// var controller nvmeIdentController
+
+	// binary.Read(bytes.NewBuffer(buf[:]), utils.NativeEndian, &controller)
+
+	// fmt.Fprintln(w)
+	// fmt.Fprintf(w, "Vendor ID: %#04x\n", controller.VendorID)
+	// fmt.Fprintf(w, "Model number: %s\n", controller.ModelNumber)
+	// fmt.Fprintf(w, "Serial number: %s\n", controller.SerialNumber)
+	// fmt.Fprintf(w, "Firmware version: %s\n", controller.Firmware)
+	// fmt.Fprintf(w, "IEEE OUI identifier: 0x%02x%02x%02x\n",
+	// 	controller.IEEE[2], controller.IEEE[1], controller.IEEE[0])
+	// fmt.Fprintf(w, "Max. data transfer size: %d pages\n", 1<<controller.Mdts)
+
+	// for _, ps := range controller.Psd {
+	// 	if ps.MaxPower > 0 {
+	// 		fmt.Fprintf(w, "%+v\n", ps)
+	// 	}
+	// }
+
+	// buf2 := make([]byte, 4096)
+
+	// cmd = nvmePassthruCommand{
+	// 	opcode:   NVME_ADMIN_IDENTIFY,
+	// 	nsid:     1, // Namespace 1
+	// 	addr:     uint64(uintptr(unsafe.Pointer(&buf2[0]))),
+	// 	data_len: uint32(len(buf2)),
+	// 	cdw10:    0,
+	// }
+
+	// if err := ioctl.Ioctl(uintptr(d.fd), NVME_IOCTL_ADMIN_CMD, uintptr(unsafe.Pointer(&cmd))); err != nil {
+	// 	return err
+	// }
+
+	// fmt.Fprintf(w, "NVMe call: opcode=%#02x, size=%#04x, nsid=%#08x, cdw10=%#08x\n",
+	// 	cmd.opcode, cmd.data_len, cmd.nsid, cmd.cdw10)
+
+	// var ns nvmeIdentNamespace
+
+	// binary.Read(bytes.NewBuffer(buf2[:]), utils.NativeEndian, &ns)
+
+	// fmt.Fprintf(w, "Namespace 1 size: %d sectors\n", ns.Nsze)
+	// fmt.Fprintf(w, "Namespace 1 utilisation: %d sectors\n", ns.Nuse)
