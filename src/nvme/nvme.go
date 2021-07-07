@@ -219,7 +219,7 @@ func (d *NVMeDevice) Close() error {
 
 // WIP - need to split out functionality further.
 // func (d *NVMeDevice) PrintSMART(db *drivedb.DriveDb, w io.Writer) error {
-func (d *NVMeDevice) PrintSMART(w io.Writer) error {
+func (d *NVMeDevice) PrintSMART(w io.Writer, nsid uint32, devname string) error {
 	
 	buf := make([]byte, 512)
 	
@@ -246,33 +246,33 @@ func (d *NVMeDevice) PrintSMART(w io.Writer) error {
 
 	unit := big.NewInt(512 * 1000)
 
-	fmt.Fprintln(w, "Smart Log for NVME device")
-	fmt.Fprintf(w, "critical warning: %#02x\n", sl.Critical_warning)
-	fmt.Fprintf(w, "temperature: %d 'C\n",
+	fmt.Fprintf(w, "Smart Log for NVME device:%s namespace-id:%#02x\n", devname, nsid);
+	fmt.Fprintf(w, "critical warning                    : %#02x\n", sl.Critical_warning)
+	fmt.Fprintf(w, "temperature                         : %d C\n",
 		((uint16(sl.Temperature[1])<<8)|uint16(sl.Temperature[0]))-273) // Kelvin to degrees Celsius
-	fmt.Fprintf(w, "avail. spare: %d%%\n", sl.Avail_spare)
-	fmt.Fprintf(w, "avail. spare threshold: %d%%\n", sl.Spare_thresh)
-	fmt.Fprintf(w, "percentage used: %d%%\n", sl.Percent_used)
-	fmt.Fprintf(w, "data units read: %d [%s]\n",
+	fmt.Fprintf(w, "available_spare                     : %d%%\n", sl.Avail_spare)
+	fmt.Fprintf(w, "available_spare_threshold           : %d%%\n", sl.Spare_thresh)
+	fmt.Fprintf(w, "percentage used                     : %d%%\n", sl.Percent_used)
+	fmt.Fprintf(w, "data_units_read                     : %d [%s]\n",
 		unitsRead, utils.FormatBigBytes(new(big.Int).Mul(unitsRead, unit)))
-	fmt.Fprintf(w, "data units written: %d [%s]\n",
+	fmt.Fprintf(w, "data_units_written                  : %d [%s]\n",
 		unitsWritten, utils.FormatBigBytes(new(big.Int).Mul(unitsWritten, unit)))
-	fmt.Fprintf(w, "host read commands: %d\n", hostReads)
-	fmt.Fprintf(w, "host write commands: %d\n", hostWrites)
-	fmt.Fprintf(w, "controller busy time: %d\n", ctrlBusyTime)
-	fmt.Fprintf(w, "power cycles: %d\n", powerCycles)
-	fmt.Fprintf(w, "power on hours: %d\n", powerOnHours)
-	fmt.Fprintf(w, "unsafe shutdowns: %d\n", unsafeShutdowns)
-	fmt.Fprintf(w, "media_error: %d\n", mediaErrors)
-	fmt.Fprintf(w, "num_err_log_entries: %d\n", numErrLogEntries)
-	fmt.Fprintf(w, "Warning Temperature Time: %d\n", sl.Warning_temp_time)
-	fmt.Fprintf(w, "Critical Composite Temperature Time: %d\n", sl.Critical_comp_time)
-	fmt.Fprintf(w, "Temperature Sensor 1: %d 'C\n", uint16(sl.Temp_sensor[0]-uint16(273)))
-	fmt.Fprintf(w, "Temperature Sensor 2: %d 'C\n", uint16(sl.Temp_sensor[1]-uint16(273)))
-	fmt.Fprintf(w, "Thermal Management T1 Trans Count: %d\n", uint32(sl.Thm_temp1_trans_count))
-	fmt.Fprintf(w, "Thermal Management T2 Trans Count: %d\n", uint32(sl.Thm_temp2_trans_count))
-	fmt.Fprintf(w, "Thermal Management T1 Total Time: %d\n", uint32(sl.Thm_temp1_total_time))
-	fmt.Fprintf(w, "Thermal Management T2 Total Time: %d\n", uint32(sl.Thm_temp2_total_time))
+	fmt.Fprintf(w, "host_read_commands                  : %d\n", hostReads)
+	fmt.Fprintf(w, "host_write_commands                 : %d\n", hostWrites)
+	fmt.Fprintf(w, "controller_busy_time                : %d\n", ctrlBusyTime)
+	fmt.Fprintf(w, "power_cycles                        : %d\n", powerCycles)
+	fmt.Fprintf(w, "power_on_hours                      : %d\n", powerOnHours)
+	fmt.Fprintf(w, "unsafe_shutdowns                    : %d\n", unsafeShutdowns)
+	fmt.Fprintf(w, "media_error                         : %d\n", mediaErrors)
+	fmt.Fprintf(w, "num_err_log_entries                 : %d\n", numErrLogEntries)
+	fmt.Fprintf(w, "Warning Temperature Time            : %d\n", sl.Warning_temp_time)
+	fmt.Fprintf(w, "Critical Composite Temperature Time : %d\n", sl.Critical_comp_time)
+	fmt.Fprintf(w, "Temperature Sensor 1                : %d 'C\n", uint16(sl.Temp_sensor[0]-uint16(273)))
+	fmt.Fprintf(w, "Temperature Sensor 2                : %d 'C\n", uint16(sl.Temp_sensor[1]-uint16(273)))
+	fmt.Fprintf(w, "Thermal Management T1 Trans Count   : %d\n", uint32(sl.Thm_temp1_trans_count))
+	fmt.Fprintf(w, "Thermal Management T2 Trans Count   : %d\n", uint32(sl.Thm_temp2_trans_count))
+	fmt.Fprintf(w, "Thermal Management T1 Total Time    : %d\n", uint32(sl.Thm_temp1_total_time))
+	fmt.Fprintf(w, "Thermal Management T2 Total Time    : %d\n", uint32(sl.Thm_temp2_total_time))
 	
 	return nil
 }
